@@ -10,6 +10,11 @@ data P = Pint Integer | Ptrue | Pfalse
 
 data V = VI Integer | VB Bool
 
+instance Eq V where
+    VI n1 == VI n2 = True
+    VB b1 == VB b2 = True
+    v1 == v2 = False
+
 type S = [V]
 
 sem :: P -> S -> S
@@ -57,11 +62,15 @@ sem p s = case p of
     (elem1 : elem2 : elem3 : t) -> (elem3 : elem2 : elem1 : t)
     _ -> error "Not enough arguments for function 'swap2'"
   Pcond p1 p2 -> case s of
-    (VB b : t) -> if b then (sem p1 t) else (sem p2 t)
+    (VB b : t) -> if (sem p1 t == sem p2 t) then
+        (if b then (sem p1 t) else (sem p2 t)) else
+        error "'cond' arguments must be of same type"
     _ -> error "Invalid argument for function 'cond'"
   Ploop p1 -> case s of
-    (VB b : t) -> if b then (sem (Ploop p1) (sem p1 t)) else t
-    _ -> error "Invalid argument for function 'loop'"
+      (VB b : t) -> case (sem p1 t) of
+          (VB b1 : t1) -> if t1 == t then (if b then (sem (Ploop p1) (VB b1 : t1)) else t) else error "'loop' argument must preserve stack and add bool on head"
+          _ -> error "'loop' argument must preserve stack and add bool on head"
+      _ -> error "Invalid argument for function 'loop'"
 
 -- Main function: interpreter
 
