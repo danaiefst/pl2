@@ -10,43 +10,41 @@ data P = Pint Integer | Ptrue | Pfalse
 
 data V = VI Integer | VB Bool
 
-instance Eq V where
-    VI n1 == VI n2 = True
-    VB b1 == VB b2 = True
-    v1 == v2 = False
+data T = I | B deriving (Eq, Show)
 
 type S = [V]
+type ST = [T]
 
-sem :: P -> S -> S
-sem p s = case p of
-  Pseq p1 p2 -> sem p2 (sem p1 s)
-  Pint n -> (VI n : s)
-  Ptrue -> (VB True : s)
-  Pfalse -> (VB False : s)
+type_check :: P -> ST -> ST
+type_check p s = case p of
+  Pseq p1 p2 -> type_check p2 (type_check p1 s)
+  Pint n -> (I : s)
+  Ptrue -> (B : s)
+  Pfalse -> (B : s)
   Padd -> case s of
-    (VI n1 : VI n2 : t) -> (VI (n1 + n2) : t)
+    (I : I : t) -> (I : t)
     _ -> error "Invalid arguments for operator '+'"
   Pneg -> case s of
-    (VI n : t) -> (VI (-n) : t)
+    (I : t) -> (I : t)
     _ -> error "Invalid arguments for operator '-'"
   Pmul -> case s of
-    (VI n1 : VI n2 : t) -> (VI (n1 * n2) : t)
+    (I : I : t) -> (I : t)
     _ -> error "Invalid arguments for operator '*'"
   Pdiv -> case s of
-    (VI n1 : VI n2 : t) -> (VI (mod n2 n1) : VI (div n2 n1) : t)
+    (I : I : t) -> (I : I : t)
     _ -> error "Invalid arguments for operator '/'"
   Plt -> case s of
-    (VI n1 : VI n2 : t) -> (VB (n2 < n1) : t)
+    (I : I : t) -> (B : t)
     _ -> error "Invalid arguments for operator '<'"
   Peq -> case s of
-    (VB b1 : VB b2 : t) -> (VB (b2 == b1) : t)
-    (VI n1 : VI n2 : t) -> (VB (n1 == n2) : t)
+    (B : B : t) -> (B : t)
+    (I : I : t) -> (B : t)
     _ -> error "Invalid arguments for operator '='"
   Pand -> case s of
-    (VB b1 : VB b2 : t) -> (VB (b2 && b1) : t)
+    (B : B : t) -> (B : t)
     _ -> error "Invalid arguments for operator 'and'"
   Pnot -> case s of
-    (VB b1 : t) -> (VB (not b1) : t)
+    (B : t) -> (B : t)
     _ -> error "Invalid arguments for operator 'not'"
   Pnop -> s
   Pdup -> case s of
@@ -62,21 +60,63 @@ sem p s = case p of
     (elem1 : elem2 : elem3 : t) -> (elem3 : elem2 : elem1 : t)
     _ -> error "Not enough arguments for function 'swap2'"
   Pcond p1 p2 -> case s of
-    (VB b : t) -> if (sem p1 t == sem p2 t) then
-        (if b then (sem p1 t) else (sem p2 t)) else
-        error "'cond' arguments must be of same type"
+    (B : t) -> let t1 = type_check p1 t
+                   t2 = type_check p2 t
+                  in if (t1 == t2) then t1 else
+                    error "'cond' arguments must be of same type"
     _ -> error "Invalid argument for function 'cond'"
   Ploop p1 -> case s of
-      (VB b : t) -> case (sem p1 t) of
-          (VB b1 : t1) -> if t1 == t then (if b then (sem (Ploop p1) (VB b1 : t1)) else t) else error "'loop' argument must preserve stack and add bool on head"
+      (B : t) -> case (type_check p1 t) of
+          (B : t1) -> if t1 == t then t1 else
+            error "'loop' argument must preserve stack and add bool on head"
           _ -> error "'loop' argument must preserve stack and add bool on head"
       _ -> error "Invalid argument for function 'loop'"
+
+
+sem :: P -> S -> S
+sem p s = case p of
+  Pseq p1 p2 -> sem p2 (sem p1 s)
+  Pint n -> (VI n : s)
+  Ptrue -> (VB True : s)
+  Pfalse -> (VB False : s)
+  Padd -> case s of
+    (VI n1 : VI n2 : t) -> (VI (n1 + n2) : t)
+  Pneg -> case s of
+    (VI n : t) -> (VI (-n) : t)
+  Pmul -> case s of
+    (VI n1 : VI n2 : t) -> (VI (n1 * n2) : t)
+  Pdiv -> case s of
+    (VI n1 : VI n2 : t) -> (VI (mod n2 n1) : VI (div n2 n1) : t)
+  Plt -> case s of
+    (VI n1 : VI n2 : t) -> (VB (n2 < n1) : t)
+  Peq -> case s of
+    (VB b1 : VB b2 : t) -> (VB (b2 == b1) : t)
+    (VI n1 : VI n2 : t) -> (VB (n1 == n2) : t)
+  Pand -> case s of
+    (VB b1 : VB b2 : t) -> (VB (b2 && b1) : t)
+  Pnot -> case s of
+    (VB b1 : t) -> (VB (not b1) : t)
+  Pnop -> s
+  Pdup -> case s of
+    (elem : t) -> (elem : elem : t)
+  Ppop -> case s of
+    (elem : t) -> t
+  Pswap -> case s of
+    (elem1 : elem2 : t) -> (elem2 : elem1 : t)
+  Pswap2 -> case s of
+    (elem1 : elem2 : elem3 : t) -> (elem3 : elem2 : elem1 : t)
+  Pcond p1 p2 -> case s of
+    (VB b : t) -> if b then (sem p1 t) else (sem p2 t)
+  Ploop p1 -> case s of
+      (VB b : t) -> if b then (sem (Ploop p1) (sem p1 t)) else t
 
 -- Main function: interpreter
 
 main = do
   input <- getContents
-  mapM_ print $ sem (read input) []
+  let x = read input :: P
+  let y = type_check x []
+  mapM_ print $ y `seq` sem x []
 
 -- Pretty-printing
 
